@@ -1,6 +1,13 @@
 import math
 from utm.error import OutOfRangeError
 
+try:
+    import pyproj
+    has_pyproj = True
+    projections = {}
+except ImportError:
+    has_pyproj = False
+
 __all__ = ['to_latlon', 'from_latlon']
 
 K0 = 0.9996
@@ -46,11 +53,18 @@ def to_latlon(easting, northing, zone_number, zone_letter):
     if not 'C' <= zone_letter <= 'X' or zone_letter in ['I', 'O']:
         raise OutOfRangeError('zone letter out of range (must be between C and X)')
 
+    if zone_letter < 'N':
+        northing -= 10000000
+
+    if has_pyproj:
+        if zone_number not in projections:
+            projections[zone_number] = pyproj.Proj(proj='utm', zone=zone_number, ellps='WGS84')
+
+        longitude, latitude = projections[zone_number](easting, northing, inverse=True)
+        return latitude, longitude
+
     x = easting - 500000
     y = northing
-
-    if zone_letter < 'N':
-        y -= 10000000
 
     m = y / K0
     mu = m / (R * M1)
@@ -101,6 +115,22 @@ def from_latlon(latitude, longitude):
     if not -180.0 <= longitude <= 180.0:
         raise OutOfRangeError('northing out of range (must be between 180 deg W and 180 deg E)')
 
+    zone_number = latlon_to_zone_number(latitude, longitude)
+    zone_letter = latitude_to_zone_letter(latitude)
+
+    if has_pyproj:
+        if zone_number not in projections:
+            projections[zone_number] = pyproj.Proj(proj='utm', zone=zone_number, ellps='WGS84')
+
+        easting, northing = projections[zone_number](longitude, latitude)
+        if northing < 0:
+            northing += 10000000
+
+        return int(easting), int(northing), zone_number, zone_letter
+
+    central_lon = zone_number_to_central_longitude(zone_number)
+    central_lon_rad = math.radians(central_lon)
+
     lat_rad = math.radians(latitude)
     lat_sin = math.sin(lat_rad)
     lat_cos = math.cos(lat_rad)
@@ -110,12 +140,6 @@ def from_latlon(latitude, longitude):
     lat_tan4 = lat_tan2 * lat_tan2
 
     lon_rad = math.radians(longitude)
-
-    zone_number = latlon_to_zone_number(latitude, longitude)
-    central_lon = zone_number_to_central_longitude(zone_number)
-    central_lon_rad = math.radians(central_lon)
-
-    zone_letter = latitude_to_zone_letter(latitude)
 
     n = R / math.sqrt(1 - E * lat_sin**2)
     c = E_P2 * lat_cos**2

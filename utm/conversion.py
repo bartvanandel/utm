@@ -1,10 +1,13 @@
 from __future__ import division
+from decimal import Decimal
+
 from utm.error import OutOfRangeError
 
 # For most use cases in this module, numpy is indistinguishable
 # from math, except it also works on numpy arrays
 try:
-    import numpy as mathlib
+    import numpy as np
+    mathlib = np
     use_numpy = True
 except ImportError:
     import math as mathlib
@@ -77,6 +80,28 @@ def mod_angle(value):
     return (value + mathlib.pi) % (2 * mathlib.pi) - mathlib.pi
 
 
+# We don't support Decimal input in our computations. It isn't required for
+# accurate representation of UTM coordinates, and it would complicate our code
+# to support float and Decimal input independently. Also, Numpy doesn't support
+# it at all for anything but the simplest functionality. However, rather than
+# crashing, let's simply downcast Decimal input to float in `from_latlon` and
+# `to_latlon` using this utility function.
+if use_numpy:
+    def cast_decimals(value):
+        if isinstance(value, Decimal):
+            return np.float64(value)
+        elif isinstance(value, np.ndarray) and value.size > 0 and isinstance(value.flat[0], Decimal):
+            return value.astype(np.float64)
+        elif isinstance(value, (list, tuple)) and len(value) > 0 and isinstance(value[0], Decimal):
+            return type(value)(float(x) for x in value)
+        return value
+else:
+    def cast_decimals(value):
+        if isinstance(value, Decimal):
+            return float(value)
+        return value
+
+
 def to_latlon(easting, northing, zone_number, zone_letter=None, northern=None, strict=True):
     """This function converts UTM coordinates to Latitude and Longitude
 
@@ -119,6 +144,9 @@ def to_latlon(easting, northing, zone_number, zone_letter=None, northern=None, s
         raise ValueError('either zone_letter or northern needs to be set')
     elif zone_letter and northern is not None:
         raise ValueError('set either zone_letter or northern, but not both')
+
+    easting = cast_decimals(easting)
+    northing = cast_decimals(northing)
 
     if strict:
         if not in_bounds(easting, 100000, 1000000, upper_strict=True):
@@ -228,6 +256,10 @@ def from_latlon(latitude, longitude, force_zone_number=None, force_zone_letter=N
 
        .. _[1]: http://www.jaworski.ca/utmzones.htm
     """
+
+    latitude = cast_decimals(latitude)
+    longitude = cast_decimals(longitude)
+
     if not in_bounds(latitude, -80, 84):
         raise OutOfRangeError('latitude out of range (must be between 80 deg S and 84 deg N)')
     if not in_bounds(longitude, -180, 180):
@@ -298,7 +330,7 @@ def from_latlon(latitude, longitude, force_zone_number=None, force_zone_letter=N
 def latitude_to_zone_letter(latitude):
     # If the input is a numpy array, just use the first element
     # User responsibility to make sure that all points are in one zone
-    if use_numpy and isinstance(latitude, mathlib.ndarray):
+    if use_numpy and isinstance(latitude, np.ndarray):
         latitude = latitude.flat[0]
 
     if -80 <= latitude <= 84:
@@ -311,9 +343,9 @@ def latlon_to_zone_number(latitude, longitude):
     # If the input is a numpy array, just use the first element
     # User responsibility to make sure that all points are in one zone
     if use_numpy:
-        if isinstance(latitude, mathlib.ndarray):
+        if isinstance(latitude, np.ndarray):
             latitude = latitude.flat[0]
-        if isinstance(longitude, mathlib.ndarray):
+        if isinstance(longitude, np.ndarray):
             longitude = longitude.flat[0]
 
     # Normalize longitude to be in the range [-180, 180)

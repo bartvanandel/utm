@@ -154,6 +154,14 @@ def test_from_latlon_numpy_static():
 
 
 @pytest.mark.parametrize("latlon, utm, utm_kw", known_values)
+def test_from_latlon_decimal(latlon, utm, utm_kw):
+    from decimal import Decimal
+
+    result = UTM.from_latlon(*[Decimal(x) for x in latlon[:2]])
+    assert_utm_equal(utm, result)
+
+
+@pytest.mark.parametrize("latlon, utm, utm_kw", known_values)
 def test_to_latlon(latlon, utm, utm_kw):
     """to_latlon should give known result with known input"""
     result = UTM.to_latlon(*utm)
@@ -182,6 +190,19 @@ def test_to_latlon_numpy_static():
     assert_latlon_equal(
         (np.array([0.0, 3.0, 6.0]), np.array([0.0, 1.0, 3.4])), result
     )
+
+
+@pytest.mark.parametrize("latlon, utm, utm_kw", known_values)
+def test_to_latlon_decimal(latlon, utm, utm_kw):
+    from decimal import Decimal
+
+    utm = [Decimal(x) for x in utm[:2]] + list(utm[2:])
+
+    result = UTM.to_latlon(*utm)
+    assert_latlon_equal(latlon, result)
+
+    result = UTM.to_latlon(*utm[0:3], **utm_kw)
+    assert_latlon_equal(latlon, result)
 
 
 def test_from_latlon_range_ok():
